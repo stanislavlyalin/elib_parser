@@ -1,6 +1,7 @@
 # coding': ' utf-8
 
 import requests
+from bs4 import BeautifulSoup
 
 url = 'https://elibrary.ru/org_items.asp'
 
@@ -44,6 +45,25 @@ data = {
 
 response = requests.post(url=url, headers=headers, data=data)
 
-file = open('resp_text.html', mode='w', encoding='utf8')
-file.write(response.text)
-file.close()
+soup = BeautifulSoup(response.content, 'html.parser')
+link_count = int(soup.select_one('td.redref b font').text)
+pages_count = link_count // 100  # 100 ссылок на странице
+
+links = []
+
+for page_num in range(1, pages_count + 1):
+
+    # запрос для заданной страницы
+    data['pagenum'] = str(page_num)
+    response = requests.post(url=url, headers=headers, data=data)
+
+    # собираем ссылки
+    page_links = soup.select('tr[id^=arw] td a')
+    for i in range(0, len(page_links), 2):
+        links.append('https://elibrary.ru' + page_links[i]['href'])
+
+    print('%d of %d' % (page_num, pages_count))
+
+with open('links.txt', 'w') as f:
+    for link in links:
+        f.write('%s\n' % link)
