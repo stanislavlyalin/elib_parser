@@ -1,14 +1,21 @@
 # coding': ' utf-8
 
+# скрипт сбора ссылок на публикации ВятГУ в eLibrary.ru за указанный год
+# результат работы - файл links.txt со ссылками на страницы публикаций
+
 import requests
 from bs4 import BeautifulSoup
+from utils import unblocked_proxies_generator, response_to_html_file, safe_request
+
+SCookieID = input('SCookieID: ')
+SUserID = input('SUserID: ')
+year = input('year: ')
 
 url = 'https://elibrary.ru/org_items.asp'
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36',
-    # 'Cookie': 'SUserID=353259792; SCookieID=850404652;',
-    'Cookie': 'SUserID=353259425; SCookieID=850402712;',
+    'Cookie': 'SCookieID=%s;SUserID=%s' % (SCookieID, SUserID),
 }
 
 data = {
@@ -22,7 +29,7 @@ data = {
     'org_order': '0',
     'author_order': '0',
     'year_order': '1',
-    'years_2018': 'on',
+    'years_%s' % year: 'on',
     'type_order': '0',
     'types_PRC': 'on',
     'types_RAR': 'on',
@@ -44,14 +51,17 @@ data = {
     'itemboxid': '0',
 }
 
-response = requests.post(url=url, headers=headers, data=data)
+proxy_gen = unblocked_proxies_generator()
 
+# поисковый запрос с указанными параметрами
+proxy = next(proxy_gen)
+response, proxy = safe_request(url, headers, data, proxy, proxy_gen)
+
+# получение числа ссылок и страниц выдачи
 soup = BeautifulSoup(response.content, 'html.parser')
 link_count = int(soup.select_one('td.redref b font').text)
-
-print('Found %d links' % link_count)
-
 pages_count = link_count // 100 + 1  # 100 ссылок на странице
+print('Found %d links' % link_count)
 
 links = []
 
@@ -59,7 +69,7 @@ for page_num in range(1, pages_count + 1):
 
     # запрос для заданной страницы
     data['pagenum'] = str(page_num)
-    response = requests.post(url=url, headers=headers, data=data)
+    response, proxy = safe_request(url, headers, data, proxy, proxy_gen)
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # собираем ссылки
