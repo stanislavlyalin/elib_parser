@@ -1,8 +1,11 @@
 # coding: utf-8
 
+import logging
 import requests
 import re
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger('elib_parser')
 
 # получение списка бесплатных https-прокси-серверов
 def free_https_proxies():
@@ -14,7 +17,11 @@ def free_https_proxies():
     proxies = [ip.replace('</td><td>', ':') for ip in ips]
     https = [1 if 'yes' in p else 0 for p in is_https]
 
-    return [proxies[i] for i in range(len(https)) if https[i] == 1]
+    https_proxies = [proxies[i] for i in range(len(https)) if https[i] == 1]
+
+    logger.info('найдено %d https-прокси-серверов с сайта free-proxy-list.net' % len(https_proxies))
+
+    return https_proxies
 
 # проверка, заблокирован ли IP сервером eLibrary, по ответу response
 def is_elib_blocked(response):
@@ -34,13 +41,13 @@ def unblocked_proxies_generator():
                 url='https://elibrary.ru/item.asp?id=35022119',
                 headers=headers,
                 proxies={'https': proxy},
-                timeout=10)
+                timeout=15)
             
             if not is_elib_blocked(response):
-                print('selected proxy: %s' % proxy)
+                logger.info('выбран незаблокированный прокси %s' % proxy)
                 yield proxy
-        except:
-            pass
+        except requests.exceptions.RequestException as e:
+            logger.error('ошибка при запросе к прокси %s в генераторе: %s' % (proxy, e))
 
 # безопасный запрос
 # пытается выполнять запрос к url с разных proxy до тех пор, пока не будет получен ответ
@@ -53,15 +60,31 @@ def safe_request(url, headers, data, proxy, proxies_gen):
                 headers=headers,
                 data=data,
                 proxies={'https': proxy},
-                timeout=10)
+                timeout=15)
 
             if not is_elib_blocked(response):
                 success = True
-        except:
+            else:
+                logger.error('прокси %s заблокирован сайтом eLibrary.ru' % proxy)
+                try:
+                    proxy = next(proxies_gen)
+                    logger.info('выбран следующий прокси %s' % proxy)
+                except StopIteration:
+                    logger.error('список прокси-серверов просмотрен. Получение нового списка...')
+                    proxies_gen = unblocked_proxies_generator()
+                    proxy = next(proxies_gen)
+                    logger.info('выбран следующий прокси %s' % proxy)
+                    
+        except requests.exceptions.RequestException as e:
+            logger.error('ошибка при запросе к прокси %s в safe_request: %s' % (proxy, e))
             try:
                 proxy = next(proxies_gen)
+                logger.info('выбран следующий прокси %s' % proxy)
             except StopIteration:
-                return requests.models.Response(), proxy
+                logger.error('список прокси-серверов просмотрен. Получение нового списка...')
+                proxies_gen = unblocked_proxies_generator()
+                proxy = next(proxies_gen)
+                logger.info('выбран следующий прокси %s' % proxy)
 
     return response, proxy
 
